@@ -1,0 +1,9 @@
+{
+    "service": "helloworld.Greeter",
+    "method": "SayHello",
+    "output": {
+        "data": {
+            "message": "Hello from proto stub"
+        }
+    }
+}
