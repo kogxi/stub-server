@@ -1,0 +1,62 @@
+package httpstub
+
+import (
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+)
+
+type StubHandler struct {
+	stubs map[string]HTTPStub
+}
+
+var _ http.Handler = &StubHandler{}
+
+func NewHandler(stubDir string) (*StubHandler, error) {
+	stubs, err := loadStubs(stubDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load HTTP stubs from %v: %w ", stubDir, err)
+	}
+
+	sm := make(map[string]HTTPStub, len(stubs))
+
+	for _, s := range stubs {
+		sm[s.Path] = s
+	}
+
+	return &StubHandler{
+		stubs: sm,
+	}, nil
+}
+
+func (s *StubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	stub, ok := s.stubs[r.URL.Path]
+	if !ok {
+		slog.Error("unknown stub", slog.String("path", r.URL.Path))
+		http.Error(w, "unknown stub", http.StatusNotFound)
+		return
+	}
+
+	if stub.Method != "" && r.Method != stub.Method {
+		slog.ErrorContext(r.Context(), "method not allowed", slog.String("expected", stub.Method), slog.String("got", r.Method))
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+
+	for k, val := range stub.Response.Header {
+		for _, v := range val {
+			w.Header().Set(k, v)
+		}
+	}
+
+	w.WriteHeader(stub.Response.Status)
+
+	if stub.Response.Body == nil {
+		return
+	}
+
+	err := json.NewEncoder(w).Encode(stub.Response.Body)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "failed to encode response", slog.String("error", err.Error()))
+	}
+}

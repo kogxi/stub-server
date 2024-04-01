@@ -1,0 +1,17 @@
+{
+    "path": "/route",
+    "method": "GET",
+    "response": {
+        "header": {
+            "Content-Type": ["application/json"]
+        },
+        "body": {
+            "name": "stub feature",
+            "location": {
+                "latitude": 12,
+                "longitude": 14
+            }
+        },
+        "status": 200
+    }
+}
