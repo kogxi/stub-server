@@ -1,3 +1,6 @@
+before:
+  hooks:
+    - go mod tidy
 builds:
   - main: ./cmd
     binary: stub-server
@@ -5,3 +8,9 @@ builds:
       - linux
       - darwin
       - windows
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
