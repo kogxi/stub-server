@@ -38,6 +38,7 @@ kos:
   platforms:
   - linux/amd64
   - linux/arm64
+  - darwin/arm64
 
   # Tag to build and push.
   # Empty tags are ignored.

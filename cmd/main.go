@@ -23,9 +23,9 @@ func allowH2c(next http.Handler) http.Handler {
 
 var (
 	address      = flag.String("address", ":50051", "Port to listen on")
-	protoDir     = flag.String("proto", "../examples/protos", "Path to proto files")
-	protoStubDir = flag.String("stubs", "../examples/stubs", "Path to gRPC stubs")
-	httpStubDir  = flag.String("http", "../examples/httpstubs", "Path to HTTP stubs")
+	protoDir     = flag.String("proto", "", "Path to proto files")
+	protoStubDir = flag.String("stubs", "", "Path to gRPC stubs")
+	httpStubDir  = flag.String("http", "", "Path to HTTP stubs")
 )
 
 func newHandler(httpStubDir string, protoDir string, protoStubDir string) (http.Handler, error) {
