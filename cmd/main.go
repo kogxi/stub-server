@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,17 +16,37 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func allowh2c(next http.Handler) http.Handler {
+func allowH2c(next http.Handler) http.Handler {
 	h2server := &http2.Server{IdleTimeout: time.Second * 60}
 	return h2c.NewHandler(next, h2server)
 }
 
 var (
 	address      = flag.String("address", ":50051", "Port to listen on")
-	protoDir     = flag.String("proto", "/Users/mathias/Documents/GitHub/stub-server/examples/protos", "Path to proto files")
-	protoStubDir = flag.String("stubs", "/Users/mathias/Documents/Github/stub-server/examples/stubs", "Path to gRPC stubs")
-	httpStubDir  = flag.String("http", "/Users/mathias/Documents/Github/mock/httpstubs", "Path to HTTP stubs")
+	protoDir     = flag.String("proto", "../examples/protos", "Path to proto files")
+	protoStubDir = flag.String("stubs", "../examples/stubs", "Path to gRPC stubs")
+	httpStubDir  = flag.String("http", "../examples/httpstubs", "Path to HTTP stubs")
 )
+
+func newHandler(httpStubDir string, protoDir string, protoStubDir string) (http.Handler, error) {
+	handler := api.NewHandler()
+	var err error
+	if httpStubDir != "" {
+		handler, err = handler.WithHTTP(httpStubDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create HTTP handler: %w", err)
+		}
+	}
+
+	if protoDir != "" && protoStubDir != "" {
+		handler, err = handler.WithProto(protoDir, protoStubDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create gRPC handler: %w", err)
+		}
+	}
+
+	return allowH2c(handler), nil
+}
 
 func main() {
 	flag.Parse()
@@ -34,19 +55,13 @@ func main() {
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
 	defer cancel()
 
-	handler := api.NewHandler()
-
-	handler, err := handler.WithHTTP(*httpStubDir)
+	handler, err := newHandler(*httpStubDir, *protoDir, *protoStubDir)
 	if err != nil {
-		slog.Error("failed to create HTTP handler", slog.String("error", err.Error()))
+		slog.ErrorContext(ctx, "failed to create handler", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
-	handler, err = handler.WithProto(*protoDir, *protoStubDir)
-	if err != nil {
-		slog.Error("failed to create gRPC handler", slog.String("error", err.Error()))
-	}
-
-	srv := &http.Server{Addr: *address, Handler: allowh2c(handler)}
+	srv := &http.Server{Addr: *address, Handler: handler}
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
@@ -62,6 +77,6 @@ func main() {
 
 	err = eg.Wait()
 	if err != nil {
-		slog.Info("server stopped")
+		slog.ErrorContext(ctx, "server stopped", slog.String("error", err.Error()))
 	}
 }
