@@ -5,23 +5,23 @@ import (
 	"sync"
 )
 
-type protoStorage struct {
+type ProtoStorage struct {
 	// represents [serviceName][methodName]
 	stubs map[string]map[string]Output
 
 	m sync.Mutex
 }
 
-var _ Repository = &protoStorage{}
+var _ Repository = &ProtoStorage{}
 
-func NewStorage() *protoStorage {
-	return &protoStorage{
+func NewStorage() *ProtoStorage {
+	return &ProtoStorage{
 		stubs: map[string]map[string]Output{},
 		m:     sync.Mutex{},
 	}
 }
 
-func (p *protoStorage) Add(s ProtoStub) {
+func (p *ProtoStorage) Add(s ProtoStub) {
 	p.m.Lock()
 	defer p.m.Unlock()
 
@@ -31,7 +31,7 @@ func (p *protoStorage) Add(s ProtoStub) {
 	p.stubs[s.Service][s.Method] = s.Output
 }
 
-func (p *protoStorage) Get(service string, method string, in json.RawMessage) (Output, bool) {
+func (p *ProtoStorage) Get(service string, method string, _ json.RawMessage) (Output, bool) {
 	p.m.Lock()
 	defer p.m.Unlock()
 

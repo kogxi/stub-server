@@ -3,6 +3,7 @@ package grpcstub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -86,7 +87,7 @@ func (s *GRPCService) LoadSpecs(protoDir string) error {
 	return nil
 }
 
-func (s *GRPCService) Handler(srv any, ctx context.Context, deccode func(any) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func (s *GRPCService) Handler(_ any, ctx context.Context, deccode func(any) error, _ grpc.UnaryServerInterceptor) (interface{}, error) { //nolint:revive
 	stream := grpc.ServerTransportStreamFromContext(ctx)
 	arr := strings.Split(stream.Method(), "/")
 	serviceName := arr[1]
@@ -138,7 +139,7 @@ func (s *GRPCService) Handler(srv any, ctx context.Context, deccode func(any) er
 	return nil, status.Error(codes.Unimplemented, resp.Error)
 }
 
-func (s *GRPCService) StreamHandler(srv any, stream grpc.ServerStream) error {
+func (s *GRPCService) StreamHandler(_ any, _ grpc.ServerStream) error {
 	slog.Info("received streaming call")
 
 	return status.Error(codes.Unimplemented, "")
@@ -181,7 +182,7 @@ func (s *GRPCService) registerProto(protoDir string, protoFileName string) error
 	}
 
 	_, err = protoregistry.GlobalTypes.FindMessageByName(fd.FullName())
-	if err == protoregistry.NotFound {
+	if errors.Is(err, protoregistry.NotFound) {
 		if err := protoregistry.GlobalFiles.RegisterFile(fd); err != nil {
 			return fmt.Errorf("register file: %w", err)
 		}
