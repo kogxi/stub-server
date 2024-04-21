@@ -3,6 +3,7 @@ package httpstub
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 )
@@ -41,6 +42,17 @@ func (s *StubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if stub.Method != "" && r.Method != stub.Method {
 		slog.ErrorContext(r.Context(), "method not allowed", slog.String("expected", stub.Method), slog.String("got", r.Method))
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if r.Body != nil {
+		// Read the full body to a noop Writer
+		_, err := io.Copy(newWriter(), r.Body)
+		if err != nil {
+			slog.ErrorContext(r.Context(), "error reading body", slog.String("error", err.Error()))
+			http.Error(w, "error reading request body", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	for k, val := range stub.Response.Header {
@@ -58,5 +70,7 @@ func (s *StubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := json.NewEncoder(w).Encode(stub.Response.Body)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "failed to encode response", slog.String("error", err.Error()))
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
 	}
 }
