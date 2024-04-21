@@ -8,6 +8,76 @@ builds:
       - linux
       - darwin
       - windows
+
+kos:
+-
+  # Main path to build.
+  # It must be a relative path
+  #
+  # Default: build.main
+  main: ./cmd
+
+  # Working directory used to build.
+  #
+  # Default: build.dir
+  working_dir: .
+
+  # Base image to publish to use.
+  #
+  # Default: 'cgr.dev/chainguard/static'
+  base_image: alpine
+
+  # Repository to push to.
+  #
+  # Default: $KO_DOCKER_REPO
+  repository: ghcr.io/kogxi/stub-server
+
+  # Platforms to build and publish.
+  #
+  # Default: 'linux/amd64'
+  platforms:
+  - linux/amd64
+  - linux/arm64
+
+  # Tag to build and push.
+  # Empty tags are ignored.
+  #
+  # Default: 'latest'
+  # Templates: allowed
+  tags:
+  - latest
+  - '{{.Tag}}'
+  - '{{if not .Prerelease}}stable{{end}}'
+
+  # Creation time given to the image
+  # in seconds since the Unix epoch as a string.
+  #
+  # Since: v1.17
+  # Templates: allowed
+  creation_time: '{{.CommitTimestamp}}'
+
+  # Creation time given to the files in the kodata directory
+  # in seconds since the Unix epoch as a string.
+  #
+  # Since: v1.17
+  # Templates: allowed
+  ko_data_creation_time: '{{.CommitTimestamp}}'
+
+  # SBOM format to use.
+  #
+  # Default: 'spdx'
+  # Valid options are: spdx, cyclonedx, go.version-m and none.
+  sbom: cyclonedx
+
+  # Bare uses a tag on the $KO_DOCKER_REPO without anything additional.
+  bare: true
+
+  # Whether to preserve the full import path after the repository name.
+  preserve_import_paths: true
+
+  # Whether to use the base path without the MD5 hash after the repository name.
+  base_import_paths: true
+
 changelog:
   sort: asc
   filters:
