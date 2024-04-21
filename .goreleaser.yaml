@@ -1,0 +1,7 @@
+builds:
+  - main: ./cmd
+    binary: stub-server
+    goos:
+      - linux
+      - darwin
+      - windows
