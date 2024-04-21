@@ -180,8 +180,11 @@ func (s *GRPCService) registerProto(protoDir string, protoFileName string) error
 		return fmt.Errorf("convert to FileDescriptor: %w", err)
 	}
 
-	if err := protoregistry.GlobalFiles.RegisterFile(fd); err != nil {
-		return fmt.Errorf("register file: %w", err)
+	_, err = protoregistry.GlobalTypes.FindMessageByName(fd.FullName())
+	if err == protoregistry.NotFound {
+		if err := protoregistry.GlobalFiles.RegisterFile(fd); err != nil {
+			return fmt.Errorf("register file: %w", err)
+		}
 	}
 
 	for i := 0; i < fd.Messages().Len(); i++ {
