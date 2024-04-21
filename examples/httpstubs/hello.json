@@ -6,6 +6,6 @@
           "Content-Type":  ["application/json"]
         },
         "body": {"message": "Hello from http stub"},
-        "status": 201
+        "status": 200
     }
 }
