@@ -67,7 +67,7 @@ kos:
   #
   # Default: 'spdx'
   # Valid options are: spdx, cyclonedx, go.version-m and none.
-  sbom: cyclonedx
+  sbom: none
 
   # Bare uses a tag on the $KO_DOCKER_REPO without anything additional.
   bare: true
