@@ -1,0 +1,31 @@
+{
+    "service": "routeguide.RouteGuide",
+    "method": "ListFeatures",
+    "output": {
+        "stream": {
+            "data": [
+            {
+                "name": "#1",
+                "location": {
+                    "latitude": 409146138,
+                    "longitude": -746188906
+                }
+            },
+            {
+                "name": "#2",
+                "location": {
+                    "latitude": 413628156,
+                    "longitude": -749015468
+                }                
+            },
+            {
+                "name": "#3",
+                "location": {
+                    "latitude": 419999544,
+                    "longitude": 733555590
+                }
+            }],
+            "delay": 1
+        }
+    }
+}

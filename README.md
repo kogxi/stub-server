@@ -45,13 +45,13 @@ The HTTP(s) stub requires only the `path` fields. By default the stub server ret
 ```
 
 To start the HTTP stub server one needs to specify the path to the HTTP stub dir.
-`./stub-server --http "./examples/httpstubs"`
+`./stub-server --http ./examples/httpstubs`
 
 ## gRPC stub server
 
 The gRPC stub requires the `service`, `method` and `outputs` fields.
 
-### Success example
+### Unary success example
 ```JSON
 {
     "service": "helloworld.Greeter",
@@ -64,7 +64,7 @@ The gRPC stub requires the `service`, `method` and `outputs` fields.
 }
 ```
 
-### Error example 
+### Unary Error example 
 ```JSON
 {
     "service": "helloworld.Greeter",
@@ -78,4 +78,7 @@ The gRPC stub requires the `service`, `method` and `outputs` fields.
 }
 ```
 
-To start the gRPC stub server one needs to specify the path to the gRPC stub directory and the path to the proto files. E.g., `./stub-server --proto "./examples/protos" --stubs "./examples/protostubs"`
+To start the gRPC stub server one needs to specify the path to the gRPC stub directory and the path to the proto files. E.g., `./stub-server --proto ./examples/protos --stubs ./examples/protostubs`
+
+To start HTTP and gRPC server you can combine the two commands:
+`./stub-server --proto ./examples/protos" --stubs "./examples/protostubs --http ./examples/httpstubs`

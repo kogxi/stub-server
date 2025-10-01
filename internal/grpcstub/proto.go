@@ -10,15 +10,34 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+type Stream struct {
+	Data  []json.RawMessage `json:"data"`
+	Error string            `json:"error"`
+	Code  *codes.Code       `json:"code,omitempty"`
+	Delay int               `json:"delay,omitempty"`
+}
+
+func (s *Stream) validate() error {
+	if s.Code == nil && len(s.Data) == 0 && s.Error == "" {
+		return fmt.Errorf(`stream can't be empty`)
+	}
+	return nil
+}
+
 type Output struct {
-	Data  json.RawMessage `json:"data"`
-	Error string          `json:"error"`
-	Code  *codes.Code     `json:"code,omitempty"`
+	Data   json.RawMessage `json:"data"`
+	Error  string          `json:"error"`
+	Code   *codes.Code     `json:"code,omitempty"`
+	Stream *Stream         `json:"stream"`
 }
 
 func (o *Output) validate() error {
-	if o.Code == nil && o.Data == nil && o.Error == "" {
+	if o.Code == nil && o.Data == nil && o.Error == "" && o.Stream == nil {
 		return fmt.Errorf(`output can't be empty`)
+	}
+
+	if o.Stream != nil {
+		return o.Stream.validate()
 	}
 	return nil
 }
