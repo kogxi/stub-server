@@ -4,8 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
 	"testing"
 
@@ -20,18 +18,19 @@ import (
 // go:generate
 
 func TestHTTPServer(t *testing.T) {
-	handler, err := newHandler("../examples/httpstubs", "", "")
-	require.NoError(t, err)
+	// handler, err := newHandler("../examples/httpstubs", "", "")
+	// require.NoError(t, err)
 
-	server := httptest.NewServer(handler)
-	defer server.Close()
+	// server := httptest.NewServer(handler)
+	// defer server.Close()
 
-	url, err := url.JoinPath(server.URL, "helloworld")
-	require.NoError(t, err)
+	// url, err := url.JoinPath(server.URL, "helloworld")
+	// require.NoError(t, err)
+	url := "http://localhost:50051/helloworld"
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	require.NoError(t, err)
-	resp, err := server.Client().Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 

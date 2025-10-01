@@ -95,7 +95,7 @@ func (s *GRPCService) Handler(_ any, ctx context.Context, deccode func(any) erro
 	serviceName := arr[1]
 	methodName := arr[2]
 
-	slog.Info("received gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
+	slog.InfoContext(ctx, "received gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
 
 	service, ok := s.sdMap[serviceName]
 	if !ok {
@@ -151,7 +151,7 @@ func (s *GRPCService) ServerStreamHandler(_ any, stream grpc.ServerStream) error
 	serviceName := arr[1]
 	methodName := arr[2]
 
-	slog.Info("received server side streaming gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
+	slog.InfoContext(ctx, "received server side streaming gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
 
 	service, ok := s.sdMap[serviceName]
 	if !ok {
@@ -218,7 +218,7 @@ func (s *GRPCService) ClientStreamHandler(_ any, stream grpc.ServerStream) error
 	serviceName := arr[1]
 	methodName := arr[2]
 
-	slog.Info("received client side streaming gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
+	slog.InfoContext(ctx, "received client side streaming gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
 
 	service, ok := s.sdMap[serviceName]
 	if !ok {
