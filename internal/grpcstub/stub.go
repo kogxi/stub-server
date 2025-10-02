@@ -26,17 +26,20 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
+// Repository defines the interface for storing and retrieving gRPC stubs.
 type Repository interface {
 	Add(stub ProtoStub)
 	Get(service string, method string, in json.RawMessage) (Output, bool)
 }
 
+// GRPCService represents a gRPC service that can handle requests based on loaded stubs.
 type GRPCService struct {
 	stubs      Repository
 	sdMap      map[string]protoreflect.ServiceDescriptor
 	grpcServer *grpc.Server
 }
 
+// New creates a new GRPCService with the provided gRPC server and stub repository.
 func New(srv *grpc.Server, r Repository) GRPCService {
 	s := GRPCService{
 		stubs:      r,
@@ -47,7 +50,7 @@ func New(srv *grpc.Server, r Repository) GRPCService {
 }
 
 func (s *GRPCService) loadStubs(dir string) error {
-	stubs, err := Load(dir)
+	stubs, err := load(dir)
 	if err != nil {
 		return fmt.Errorf("failed to load stubs: %w", err)
 	}
@@ -62,6 +65,8 @@ func (s *GRPCService) loadStubs(dir string) error {
 	return nil
 }
 
+// LoadSpecs loads all .proto files from the specified directory and registers them
+// with the gRPC server.
 func (s *GRPCService) LoadSpecs(protoDir string) error {
 	err := filepath.WalkDir(protoDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -89,6 +94,8 @@ func (s *GRPCService) LoadSpecs(protoDir string) error {
 	return nil
 }
 
+// Handler handles unary gRPC calls by matching them against loaded stubs and returning
+// the corresponding responses.
 func (s *GRPCService) Handler(_ any, ctx context.Context, deccode func(any) error, _ grpc.UnaryServerInterceptor) (interface{}, error) { //nolint:revive
 	stream := grpc.ServerTransportStreamFromContext(ctx)
 	arr := strings.Split(stream.Method(), "/")
@@ -144,6 +151,8 @@ func (s *GRPCService) Handler(_ any, ctx context.Context, deccode func(any) erro
 	return nil, status.Error(codes.Unimplemented, resp.Error)
 }
 
+// ServerStreamHandler handles server-side streaming gRPC calls by matching them against
+// loaded stubs and returning the corresponding stream of responses.
 func (s *GRPCService) ServerStreamHandler(_ any, stream grpc.ServerStream) error {
 	ctx := stream.Context()
 	tStream := grpc.ServerTransportStreamFromContext(ctx)
@@ -211,6 +220,8 @@ func (s *GRPCService) ServerStreamHandler(_ any, stream grpc.ServerStream) error
 	return nil
 }
 
+// ClientStreamHandler handles client-side streaming gRPC calls by matching them against
+// loaded stubs and returning the corresponding response after the stream is closed.
 func (s *GRPCService) ClientStreamHandler(_ any, stream grpc.ServerStream) error {
 	ctx := stream.Context()
 	tStream := grpc.ServerTransportStreamFromContext(ctx)
@@ -289,20 +300,25 @@ func (s *GRPCService) ClientStreamHandler(_ any, stream grpc.ServerStream) error
 	return nil
 }
 
-func (s *GRPCService) registerProto(protoDir string, protoFileName string) error {
+func (s *GRPCService) registerProto(protoDir string, protoFileName string) (err error) {
 	// Skip the file if it is already registered
 	if _, err := protoregistry.GlobalFiles.FindFileByPath(protoFileName); err == nil {
 		return nil
 	}
 
-	fh, err := os.Open(path.Join(protoDir, protoFileName))
+	f, err := os.Open(path.Join(protoDir, protoFileName))
 	if err != nil {
 		return fmt.Errorf("open file: %w", err)
 	}
-	defer fh.Close()
+	defer func() {
+		closeErr := f.Close()
+		if closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close file: %w", closeErr))
+		}
+	}()
 
 	handler := reporter.NewHandler(nil)
-	node, err := parser.Parse(protoFileName, fh, handler)
+	node, err := parser.Parse(protoFileName, f, handler)
 	if err != nil {
 		return fmt.Errorf("parse proto: %w", err)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -56,7 +57,9 @@ func TestHTTPServer(t *testing.T) {
 	require.NoError(t, err)
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() {
+		require.NoError(t, resp.Body.Close())
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
@@ -96,7 +99,7 @@ func TestGrpcServerSuccessResponses(t *testing.T) {
 		results := make([]*routeguide.Feature, 0, 3)
 		for {
 			feature, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			require.NoError(t, err)

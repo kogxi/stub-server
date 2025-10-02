@@ -2,6 +2,7 @@ package grpcstub
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+// Stream represents a stream of gRPC responses.
 type Stream struct {
 	Data  []json.RawMessage `json:"data"`
 	Error string            `json:"error"`
@@ -24,6 +26,7 @@ func (s *Stream) validate() error {
 	return nil
 }
 
+// Output represents the output of a gRPC method, which can be a single response or a stream.
 type Output struct {
 	Data   json.RawMessage `json:"data"`
 	Error  string          `json:"error"`
@@ -42,6 +45,7 @@ func (o *Output) validate() error {
 	return nil
 }
 
+// ProtoStub represents a gRPC stub definition.
 type ProtoStub struct {
 	Service string `json:"service"`
 	Method  string `json:"method"`
@@ -60,7 +64,36 @@ func (s *ProtoStub) validate() error {
 	return s.Output.validate()
 }
 
-func Load(dir string) ([]ProtoStub, error) {
+func loadFile(path string) (s ProtoStub, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return ProtoStub{}, fmt.Errorf("failed to open file: %v: %w", path, err)
+	}
+	defer func() {
+		closeErr := f.Close()
+		if closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close file: %w", closeErr))
+		}
+	}()
+
+	stubJSON, err := io.ReadAll(f)
+	if err != nil {
+		return ProtoStub{}, fmt.Errorf("failed to read file %v: %w", path, err)
+	}
+	var stub ProtoStub
+	err = json.Unmarshal(stubJSON, &stub)
+	if err != nil {
+		return ProtoStub{}, fmt.Errorf("failed to unmarshal stub %v: %w", path, err)
+	}
+
+	err = stub.validate()
+	if err != nil {
+		return ProtoStub{}, fmt.Errorf("stub validation failed %v: %w", path, err)
+	}
+	return stub, nil
+}
+
+func load(dir string) ([]ProtoStub, error) {
 	stubs := make([]ProtoStub, 0)
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -71,26 +104,11 @@ func Load(dir string) ([]ProtoStub, error) {
 				return nil
 			}
 
-			file, err := os.Open(path)
+			stub, err := loadFile(path)
 			if err != nil {
-				return fmt.Errorf("failed to open file: %v: %w", path, err)
-			}
-			defer file.Close()
-
-			stubJSON, err := io.ReadAll(file)
-			if err != nil {
-				return fmt.Errorf("failed to read file %v: %w", d.Name(), err)
-			}
-			var stub ProtoStub
-			err = json.Unmarshal(stubJSON, &stub)
-			if err != nil {
-				return fmt.Errorf("failed to unmarshal stub %v: %w", d.Name(), err)
+				return fmt.Errorf("failed to load stub from file %v: %w", path, err)
 			}
 
-			err = stub.validate()
-			if err != nil {
-				return fmt.Errorf("stub validation failed: %w", err)
-			}
 			stubs = append(stubs, stub)
 		}
 		return nil
