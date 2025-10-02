@@ -1,6 +1,7 @@
 # PoC Stub Server
-The Stub Server is a proof of concept of a HTTP(s) and gRPC stub server.
+The Stub Server is a simple stubs server for HTTP(s) and gRPC.
 No need to invoke the proto compiler - the proto files are loaded dynamically.
+It supports streaming and unary RPC calls for gRPC.
 The HTTP and gRPC server run on the same port.
 
 # Usage
@@ -45,13 +46,13 @@ The HTTP(s) stub requires only the `path` fields. By default the stub server ret
 ```
 
 To start the HTTP stub server one needs to specify the path to the HTTP stub dir.
-`./stub-server --http "./examples/httpstubs"`
+`./stub-server --http ./examples/httpstubs`
 
 ## gRPC stub server
 
 The gRPC stub requires the `service`, `method` and `outputs` fields.
 
-### Success example
+### Unary success example
 ```JSON
 {
     "service": "helloworld.Greeter",
@@ -64,7 +65,7 @@ The gRPC stub requires the `service`, `method` and `outputs` fields.
 }
 ```
 
-### Error example 
+### Unary Error example 
 ```JSON
 {
     "service": "helloworld.Greeter",
@@ -78,4 +79,7 @@ The gRPC stub requires the `service`, `method` and `outputs` fields.
 }
 ```
 
-To start the gRPC stub server one needs to specify the path to the gRPC stub directory and the path to the proto files. E.g., `./stub-server --proto "./examples/protos" --stubs "./examples/protostubs"`
+To start the gRPC stub server one needs to specify the path to the gRPC stub directory and the path to the proto files. E.g., `./stub-server --proto ./examples/protos --stubs ./examples/protostubs`
+
+To start HTTP and gRPC server you can combine the two commands:
+`./stub-server --proto ./examples/protos" --stubs "./examples/protostubs --http ./examples/httpstubs`

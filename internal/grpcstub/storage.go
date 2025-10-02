@@ -5,6 +5,7 @@ import (
 	"sync"
 )
 
+// ProtoStorage is an in-memory storage for gRPC stubs.
 type ProtoStorage struct {
 	// represents [serviceName][methodName]
 	stubs map[string]map[string]Output
@@ -14,6 +15,7 @@ type ProtoStorage struct {
 
 var _ Repository = &ProtoStorage{}
 
+// NewStorage creates a new instance of ProtoStorage.
 func NewStorage() *ProtoStorage {
 	return &ProtoStorage{
 		stubs: map[string]map[string]Output{},
@@ -21,6 +23,7 @@ func NewStorage() *ProtoStorage {
 	}
 }
 
+// Add adds a new ProtoStub to the storage.
 func (p *ProtoStorage) Add(s ProtoStub) {
 	p.m.Lock()
 	defer p.m.Unlock()
@@ -31,6 +34,7 @@ func (p *ProtoStorage) Add(s ProtoStub) {
 	p.stubs[s.Service][s.Method] = s.Output
 }
 
+// Get retrieves the Output for a given service and method.
 func (p *ProtoStorage) Get(service string, method string, _ json.RawMessage) (Output, bool) {
 	p.m.Lock()
 	defer p.m.Unlock()

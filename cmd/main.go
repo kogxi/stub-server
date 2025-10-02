@@ -1,3 +1,4 @@
+// Package main implements a stub server that can handle both HTTP and gRPC requests based on predefined stubs.
 package main
 
 import (

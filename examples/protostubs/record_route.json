@@ -1,0 +1,12 @@
+{
+    "service": "routeguide.RouteGuide",
+    "method": "RecordRoute",
+    "output": {
+        "data": {
+            "point_count": 10,
+            "feature_count": 5,
+            "distance": 1000,
+            "elapsed_time": 120
+        }
+    }
+}

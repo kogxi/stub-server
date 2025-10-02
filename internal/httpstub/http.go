@@ -1,3 +1,4 @@
+// Package httpstub provides an HTTP handler that serves predefined HTTP responses.
 package httpstub
 
 import (
@@ -8,12 +9,14 @@ import (
 	"net/http"
 )
 
+// StubHandler is an HTTP handler that serves predefined HTTP stubs.
 type StubHandler struct {
 	stubs map[string]HTTPStub
 }
 
 var _ http.Handler = &StubHandler{}
 
+// NewHandler creates a new StubHandler by loading HTTP stubs from the specified directory.
 func NewHandler(stubDir string) (*StubHandler, error) {
 	stubs, err := loadStubs(stubDir)
 	if err != nil {
@@ -31,6 +34,7 @@ func NewHandler(stubDir string) (*StubHandler, error) {
 	}, nil
 }
 
+// ServeHTTP serves HTTP requests based on the loaded stubs.
 func (s *StubHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stub, ok := s.stubs[r.URL.Path]
 	if !ok {
