@@ -2,9 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,18 +20,37 @@ import (
 	routeguide "google.golang.org/grpc/examples/route_guide/routeguide"
 )
 
-// go:generate
+var serverURL string
+
+func TestMain(m *testing.M) {
+	server, err := startTestServer("../examples/httpstubs", "../examples/protos", "../examples/protostubs")
+	if err != nil {
+		slog.Error("failed to start server", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	serverURL = server.URL
+	defer server.Close()
+
+	fmt.Printf("Test server started at %s\n", server.URL)
+	os.Exit(m.Run())
+}
+
+func startTestServer(httpDir, protoDir, stubDir string) (*httptest.Server, error) {
+	err := os.Setenv("GOLANG_PROTOBUF_REGISTRATION_CONFLICT", "ignore")
+	if err != nil {
+		return nil, fmt.Errorf("failed to set env: %w", err)
+	}
+
+	handler, err := newHandler(httpDir, protoDir, stubDir)
+	server := httptest.NewServer(handler)
+	return server, err
+}
 
 func TestHTTPServer(t *testing.T) {
-	// handler, err := newHandler("../examples/httpstubs", "", "")
-	// require.NoError(t, err)
+	t.Parallel()
 
-	// server := httptest.NewServer(handler)
-	// defer server.Close()
-
-	// url, err := url.JoinPath(server.URL, "helloworld")
-	// require.NoError(t, err)
-	url := "http://localhost:50051/helloworld"
+	url, err := url.JoinPath(serverURL, "helloworld")
+	require.NoError(t, err)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	require.NoError(t, err)
@@ -40,21 +64,16 @@ func TestHTTPServer(t *testing.T) {
 	assert.JSONEq(t, `{"message": "Hello from http stub"}`, string(body))
 }
 
-func TestGrpcServer(t *testing.T) {
-	err := os.Setenv("GOLANG_PROTOBUF_REGISTRATION_CONFLICT", "ignore")
-	require.NoError(t, err)
+func TestGrpcServerSuccessResponses(t *testing.T) {
+	t.Parallel()
 
-	// handler, err := newHandler("", "../examples/protos", "../examples/protostubs")
-	// require.NoError(t, err)
-
-	// server := httptest.NewServer(handler)
-	// defer server.Close()
-	// url, _ := strings.CutPrefix(server.URL, "http://")
-	url := "localhost:50051"
+	url, _ := strings.CutPrefix(serverURL, "http://")
 	c, err := grpc.NewClient(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
-	{
+	t.Run("unary", func(t *testing.T) {
+		t.Parallel()
+
 		client := helloworldpb.NewGreeterClient(c)
 		reply, err := client.SayHello(context.TODO(), &helloworldpb.HelloRequest{
 			Name: "Jane",
@@ -62,10 +81,11 @@ func TestGrpcServer(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, "Hello from proto stub", reply.Message)
-	}
+	})
 
-	{
-		routeguide.NewRouteGuideClient(c)
+	t.Run("server side streaming", func(t *testing.T) {
+		t.Parallel()
+
 		client := routeguide.NewRouteGuideClient(c)
 		stream, err := client.ListFeatures(context.TODO(), &routeguide.Rectangle{
 			Lo: &routeguide.Point{Latitude: 400000000, Longitude: -750000000},
@@ -96,10 +116,11 @@ func TestGrpcServer(t *testing.T) {
 		assert.Equal(t, "#3", results[2].Name)
 		assert.Equal(t, int32(419999544), results[2].Location.Latitude)
 		assert.Equal(t, int32(733555590), results[2].Location.Longitude)
-	}
+	})
 
-	{
-		routeguide.NewRouteGuideClient(c)
+	t.Run("client side streaming", func(t *testing.T) {
+		t.Parallel()
+
 		client := routeguide.NewRouteGuideClient(c)
 		stream, err := client.RecordRoute(context.TODO())
 		require.NoError(t, err)
@@ -117,5 +138,5 @@ func TestGrpcServer(t *testing.T) {
 		assert.Equal(t, int32(5), summary.FeatureCount)
 		assert.Equal(t, int32(1000), summary.Distance)
 		assert.Equal(t, int32(120), summary.ElapsedTime)
-	}
+	})
 }

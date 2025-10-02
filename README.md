@@ -1,6 +1,7 @@
 # PoC Stub Server
-The Stub Server is a proof of concept of a HTTP(s) and gRPC stub server.
+The Stub Server is a simple stubs server for HTTP(s) and gRPC.
 No need to invoke the proto compiler - the proto files are loaded dynamically.
+It supports streaming and unary RPC calls for gRPC.
 The HTTP and gRPC server run on the same port.
 
 # Usage
