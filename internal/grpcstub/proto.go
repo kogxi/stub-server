@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -64,35 +63,6 @@ func (s *ProtoStub) validate() error {
 	return s.Output.validate()
 }
 
-func loadFile(path string) (s ProtoStub, err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return ProtoStub{}, fmt.Errorf("failed to open file: %v: %w", path, err)
-	}
-	defer func() {
-		closeErr := f.Close()
-		if closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("close file: %w", closeErr))
-		}
-	}()
-
-	stubJSON, err := io.ReadAll(f)
-	if err != nil {
-		return ProtoStub{}, fmt.Errorf("failed to read file %v: %w", path, err)
-	}
-	var stub ProtoStub
-	err = json.Unmarshal(stubJSON, &stub)
-	if err != nil {
-		return ProtoStub{}, fmt.Errorf("failed to unmarshal stub %v: %w", path, err)
-	}
-
-	err = stub.validate()
-	if err != nil {
-		return ProtoStub{}, fmt.Errorf("stub validation failed %v: %w", path, err)
-	}
-	return stub, nil
-}
-
 func load(dir string) ([]ProtoStub, error) {
 	stubs := make([]ProtoStub, 0)
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -106,7 +76,7 @@ func load(dir string) ([]ProtoStub, error) {
 
 			stub, err := loadFile(path)
 			if err != nil {
-				return fmt.Errorf("failed to load stub from file %v: %w", path, err)
+				return fmt.Errorf("load stub from file %v: %w", path, err)
 			}
 
 			stubs = append(stubs, stub)
@@ -114,7 +84,30 @@ func load(dir string) ([]ProtoStub, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf(`error reading dir "%v": %w`, dir, err)
+		return nil, fmt.Errorf(`read dir "%v": %w`, dir, err)
 	}
 	return stubs, nil
+}
+
+func loadFile(path string) (s ProtoStub, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return ProtoStub{}, fmt.Errorf("open file: %v: %w", path, err)
+	}
+	defer func() {
+		closeErr := f.Close()
+		if closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close file: %w", closeErr))
+		}
+	}()
+
+	var stub ProtoStub
+	if err := json.NewDecoder(f).Decode(&stub); err != nil {
+		return ProtoStub{}, fmt.Errorf("unmarshal stub %v: %w", path, err)
+	}
+
+	if err := stub.validate(); err != nil {
+		return ProtoStub{}, fmt.Errorf("stub validation %v: %w", path, err)
+	}
+	return stub, nil
 }

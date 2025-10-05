@@ -4,11 +4,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 )
+
+// Stub represents a predefined HTTP stub.
+type Stub struct {
+	Path     string   `json:"path"`
+	Method   string   `json:"method"`
+	Response Response `json:"response"`
+}
 
 // Response represents an HTTP response defined in a stub.
 type Response struct {
@@ -17,14 +24,7 @@ type Response struct {
 	Status int            `json:"status"`
 }
 
-// HTTPStub represents a predefined HTTP stub.
-type HTTPStub struct {
-	Path     string   `json:"path"`
-	Method   string   `json:"method"`
-	Response Response `json:"response"`
-}
-
-func (s *HTTPStub) validate() error {
+func (s *Stub) validate() error {
 	if s.Path == "" {
 		return fmt.Errorf(`"path" field is required`)
 	}
@@ -32,38 +32,15 @@ func (s *HTTPStub) validate() error {
 	return nil
 }
 
-func loadFile(path string) (s HTTPStub, err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return HTTPStub{}, fmt.Errorf("failed to open file: %v: %w", path, err)
+func loadStubs(dir string, storage *Storage) error {
+	if err := filepath.WalkDir(dir, walk(storage)); err != nil {
+		return fmt.Errorf("read stubs from dir %v: %w", dir, err)
 	}
-	defer func() {
-		closeErr := f.Close()
-		if closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("close file: %w", closeErr))
-		}
-	}()
-
-	stubJSON, err := io.ReadAll(f)
-	if err != nil {
-		return HTTPStub{}, fmt.Errorf("failed to read file %v: %w", path, err)
-	}
-	var stub HTTPStub
-	err = json.Unmarshal(stubJSON, &stub)
-	if err != nil {
-		return HTTPStub{}, fmt.Errorf("failed to unmarshal stub %v: %w", path, err)
-	}
-
-	err = stub.validate()
-	if err != nil {
-		return HTTPStub{}, fmt.Errorf("stub validation failed: %w", err)
-	}
-	return stub, nil
+	return nil
 }
 
-func loadStubs(dir string) ([]HTTPStub, error) {
-	stubs := make([]HTTPStub, 0)
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+func walk(storage *Storage) fs.WalkDirFunc {
+	return func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -74,15 +51,34 @@ func loadStubs(dir string) ([]HTTPStub, error) {
 
 			stub, err := loadFile(path)
 			if err != nil {
-				return fmt.Errorf("failed to load stub from %v: %w", path, err)
+				return fmt.Errorf("load stub from %v: %w", path, err)
 			}
 
-			stubs = append(stubs, stub)
+			storage.Add(stub)
 		}
 		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error reading dir %v: %w", dir, err)
 	}
-	return stubs, nil
+}
+
+func loadFile(path string) (s Stub, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Stub{}, fmt.Errorf("open file: %v: %w", path, err)
+	}
+	defer func() {
+		closeErr := f.Close()
+		if closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close file: %w", closeErr))
+		}
+	}()
+
+	var stub Stub
+	if err := json.NewDecoder(f).Decode(&stub); err != nil {
+		return Stub{}, fmt.Errorf("unmarshal stub %v: %w", path, err)
+	}
+
+	if err = stub.validate(); err != nil {
+		return Stub{}, fmt.Errorf("stub validation %v: %w", path, err)
+	}
+	return stub, nil
 }
