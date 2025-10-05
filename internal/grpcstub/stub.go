@@ -39,20 +39,30 @@ type GRPCService struct {
 	grpcServer *grpc.Server
 }
 
-// New creates a new GRPCService with the provided gRPC server and stub repository.
-func New(srv *grpc.Server, r Repository) GRPCService {
-	s := GRPCService{
+// registerServices loads proto files from the specified protoDir, registers them with the provided
+// gRPC server, and loads stub definitions from the specified stubDir into the provided Repository.
+func registerServices(srv *grpc.Server, protoDir string, stubDir string, r Repository) error {
+	s := &GRPCService{
 		stubs:      r,
 		sdMap:      map[string]protoreflect.ServiceDescriptor{},
 		grpcServer: srv,
 	}
-	return s
+
+	if err := s.registerServices(protoDir); err != nil {
+		return fmt.Errorf("load protos from %v: %w", protoDir, err)
+	}
+
+	if err := s.loadStubs(stubDir); err != nil {
+		return fmt.Errorf("load stubs from %v: %w", stubDir, err)
+	}
+
+	return nil
 }
 
 func (s *GRPCService) loadStubs(dir string) error {
 	stubs, err := load(dir)
 	if err != nil {
-		return fmt.Errorf("failed to load stubs: %w", err)
+		return fmt.Errorf("load stubs: %w", err)
 	}
 
 	for _, stub := range stubs {
@@ -65,9 +75,9 @@ func (s *GRPCService) loadStubs(dir string) error {
 	return nil
 }
 
-// LoadSpecs loads all .proto files from the specified directory and registers them
+// registerServices loads all .proto files from the specified directory and registers them
 // with the gRPC server.
-func (s *GRPCService) LoadSpecs(protoDir string) error {
+func (s *GRPCService) registerServices(protoDir string) error {
 	err := filepath.WalkDir(protoDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -87,7 +97,7 @@ func (s *GRPCService) LoadSpecs(protoDir string) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to load specs: %w", err)
+		return fmt.Errorf("register services: %w", err)
 	}
 
 	reflection.Register(s.grpcServer)
@@ -102,34 +112,34 @@ func (s *GRPCService) Handler(_ any, ctx context.Context, deccode func(any) erro
 	serviceName := arr[1]
 	methodName := arr[2]
 
-	slog.InfoContext(ctx, "received gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
+	slog.InfoContext(ctx, "Received gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
 
 	service, ok := s.sdMap[serviceName]
 	if !ok {
 		slog.ErrorContext(ctx, "No stub found", slog.String("service", serviceName))
-		return nil, status.Error(codes.Unimplemented, "service "+serviceName+" not found")
+		return nil, status.Error(codes.Unimplemented, "Service "+serviceName+" not found")
 	}
 
 	method := service.Methods().ByName(protoreflect.Name(methodName))
 	if method == nil {
-		return nil, status.Error(codes.Unimplemented, "method "+methodName+" not found")
+		return nil, status.Error(codes.Unimplemented, "Method "+methodName+" not found")
 	}
 	input := dynamicpb.NewMessage(method.Input())
 
-	err := deccode(input)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to decode input message", slog.String("error", err.Error()))
+	if err := deccode(input); err != nil {
+		slog.ErrorContext(ctx, "Failed to decode input message", slog.String("error", err.Error()))
 	}
 
 	jsonInput, err := protojson.Marshal(input)
 	if err != nil {
-		slog.Error("failed to marshall input", slog.String("error", err.Error()))
-		return nil, status.Error(codes.InvalidArgument, "failed to marshall input")
+		slog.ErrorContext(ctx, "Failed to marshall input", slog.String("error", err.Error()))
+		return nil, status.Error(codes.InvalidArgument, "Failed to marshall input")
 	}
 
 	resp, ok := s.stubs.Get(serviceName, methodName, jsonInput)
 	if !ok {
-		return nil, status.Error(codes.NotFound, "no stub found")
+		slog.ErrorContext(ctx, "No stub configured", slog.String("service", serviceName), slog.String("method", methodName))
+		return nil, status.Error(codes.NotFound, "No stub configured")
 	}
 
 	if resp.Data != nil {
@@ -137,8 +147,8 @@ func (s *GRPCService) Handler(_ any, ctx context.Context, deccode func(any) erro
 
 		err = protojson.Unmarshal(resp.Data, output)
 		if err != nil {
-			slog.ErrorContext(ctx, "failed to unmarshal response", slog.String("error", err.Error()))
-			return nil, status.Error(codes.Internal, "failed to unmarshal response")
+			slog.ErrorContext(ctx, "Failed to unmarshal response", slog.String("error", err.Error()))
+			return nil, status.Error(codes.Internal, "Failed to unmarshal response")
 		}
 
 		return output, nil
@@ -160,53 +170,52 @@ func (s *GRPCService) ServerStreamHandler(_ any, stream grpc.ServerStream) error
 	serviceName := arr[1]
 	methodName := arr[2]
 
-	slog.InfoContext(ctx, "received server side streaming gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
+	slog.InfoContext(ctx, "Received server side streaming gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
 
 	service, ok := s.sdMap[serviceName]
 	if !ok {
 		slog.ErrorContext(ctx, "No stub found", slog.String("service", serviceName))
-		return status.Error(codes.Unimplemented, "service "+serviceName+" not found")
+		return status.Error(codes.Unimplemented, "Service "+serviceName+" not found")
 	}
 
 	method := service.Methods().ByName(protoreflect.Name(methodName))
 	if method == nil {
-		return status.Error(codes.Unimplemented, "method "+methodName+" not found")
+		return status.Error(codes.Unimplemented, "Method "+methodName+" not found")
 	}
 	input := dynamicpb.NewMessage(method.Input())
-	err := stream.RecvMsg(input)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to receive input message", slog.String("error", err.Error()))
-		return status.Error(codes.InvalidArgument, "failed to receive input message")
+	if err := stream.RecvMsg(input); err != nil {
+		slog.ErrorContext(ctx, "Failed to receive input message", slog.String("error", err.Error()))
+		return status.Error(codes.InvalidArgument, "Failed to receive input message")
 	}
 
 	jsonInput, err := protojson.Marshal(input)
 	if err != nil {
-		slog.Error("failed to marshall input", slog.String("error", err.Error()))
-		return status.Error(codes.InvalidArgument, "failed to marshall input")
+		slog.Error("Failed to marshall input", slog.String("error", err.Error()))
+		return status.Error(codes.InvalidArgument, "Failed to marshall input")
 	}
-	slog.InfoContext(ctx, "received message", slog.String("input", string(jsonInput)))
+	slog.InfoContext(ctx, "Received message", slog.String("input", string(jsonInput)))
 
 	resp, ok := s.stubs.Get(serviceName, methodName, jsonInput)
 	if !ok {
-		return status.Error(codes.NotFound, "no stub found")
+		slog.ErrorContext(ctx, "No stub configured", slog.String("service", serviceName), slog.String("method", methodName))
+		return status.Error(codes.NotFound, "No stub configured")
 	}
 
 	if resp.Stream != nil && resp.Stream.Data != nil {
 		for _, d := range resp.Stream.Data {
 			output := dynamicpb.NewMessage(method.Output())
-			err = protojson.Unmarshal(d, output)
-			if err != nil {
-				slog.ErrorContext(ctx, "failed to unmarshal response", slog.String("error", err.Error()))
-				return status.Error(codes.Internal, "failed to unmarshal response")
+			if err := protojson.Unmarshal(d, output); err != nil {
+				slog.ErrorContext(ctx, "Failed to unmarshal response", slog.String("error", err.Error()))
+				return status.Error(codes.Internal, "Failed to unmarshal response")
 			}
 
-			err = stream.SendMsg(output)
-			if err != nil {
-				slog.ErrorContext(ctx, "failed to send message", slog.String("error", err.Error()))
-				return status.Error(codes.Internal, "failed to send message")
+			if err := stream.SendMsg(output); err != nil {
+				slog.ErrorContext(ctx, "Failed to send message", slog.String("error", err.Error()))
+				return status.Error(codes.Internal, "Failed to send message")
 			}
+
 			if resp.Stream.Delay > 0 {
-				slog.InfoContext(ctx, "sleeping", slog.Int("delay_ms", resp.Stream.Delay))
+				slog.InfoContext(ctx, "Sleeping", slog.Int("delay_ms", resp.Stream.Delay))
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -229,7 +238,7 @@ func (s *GRPCService) ClientStreamHandler(_ any, stream grpc.ServerStream) error
 	serviceName := arr[1]
 	methodName := arr[2]
 
-	slog.InfoContext(ctx, "received client side streaming gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
+	slog.InfoContext(ctx, "Received client side streaming gRPC call", slog.String("service", serviceName), slog.String("method", methodName))
 
 	service, ok := s.sdMap[serviceName]
 	if !ok {
@@ -251,38 +260,36 @@ func (s *GRPCService) ClientStreamHandler(_ any, stream grpc.ServerStream) error
 		input := dynamicpb.NewMessage(method.Input())
 		if err := stream.RecvMsg(input); err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				slog.InfoContext(ctx, "stream closed by client")
+				slog.InfoContext(ctx, "Stream closed by client")
 				break
 			}
 			if errors.Is(err, io.EOF) {
-				slog.InfoContext(ctx, "stream closed by client")
+				slog.InfoContext(ctx, "Stream closed by client")
 				break
 			}
 
-			slog.ErrorContext(ctx, "failed to receive input message", slog.String("error", err.Error()))
+			slog.ErrorContext(ctx, "Failed to receive input message", slog.String("error", err.Error()))
 			return status.Error(codes.InvalidArgument, "failed to receive input message")
 		}
 		jsonInput, err := protojson.Marshal(input)
 		if err != nil {
-			slog.Error("failed to marshall input", slog.String("error", err.Error()))
+			slog.Error("Failed to marshall input", slog.String("error", err.Error()))
 			return status.Error(codes.InvalidArgument, "failed to marshall input")
 		}
-		slog.InfoContext(ctx, "received message", slog.String("input", string(jsonInput)))
+		slog.InfoContext(ctx, "Received message", slog.String("input", string(jsonInput)))
 	}
 
 	if resp.Data != nil {
 		output := dynamicpb.NewMessage(method.Output())
 
-		err := protojson.Unmarshal(resp.Data, output)
-		if err != nil {
-			slog.ErrorContext(ctx, "failed to unmarshal response", slog.String("error", err.Error()))
+		if err := protojson.Unmarshal(resp.Data, output); err != nil {
+			slog.ErrorContext(ctx, "Failed to unmarshal response", slog.String("error", err.Error()))
 			return status.Error(codes.Internal, "failed to unmarshal response")
 		}
 
-		slog.InfoContext(ctx, "sending success response", slog.String("output", string(resp.Data)))
+		slog.InfoContext(ctx, "Sending success response", slog.String("output", string(resp.Data)))
 
-		err = stream.SendMsg(output)
-		if err != nil {
+		if err := stream.SendMsg(output); err != nil {
 			slog.ErrorContext(ctx, "failed to send message", slog.String("error", err.Error()))
 			return status.Error(codes.Internal, "failed to send message")
 		}
@@ -292,7 +299,7 @@ func (s *GRPCService) ClientStreamHandler(_ any, stream grpc.ServerStream) error
 
 	if resp.Code != nil {
 		err := status.Error(*resp.Code, resp.Error)
-		slog.InfoContext(ctx, "sending error response", slog.String("error", err.Error()))
+		slog.InfoContext(ctx, "Sending error response", slog.String("error", err.Error()))
 
 		return err
 	}

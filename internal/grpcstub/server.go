@@ -12,16 +12,8 @@ import (
 // specified protoDir, and loads stub definitions from the specified protoStubDir.
 func NewServer(protoDir string, protoStubDir string) (*grpc.Server, error) {
 	server := grpc.NewServer()
-
-	manager := New(server, NewStorage())
-	err := manager.LoadSpecs(protoDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load protos from %v: %w", protoDir, err)
-	}
-
-	err = manager.loadStubs(protoStubDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load stubs from %v: %w", protoStubDir, err)
+	if err := registerServices(server, protoDir, protoStubDir, NewStorage()); err != nil {
+		return nil, fmt.Errorf("register services: %w", err)
 	}
 
 	return server, nil

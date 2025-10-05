@@ -1,4 +1,4 @@
-package main
+package handler_test
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kogxi/stub-server/internal/handler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -24,7 +25,7 @@ import (
 var serverURL string
 
 func TestMain(m *testing.M) {
-	server, err := startTestServer("../examples/httpstubs", "../examples/protos", "../examples/protostubs")
+	server, err := startTestServer("../../examples/httpstubs", "../../examples/protos", "../../examples/protostubs")
 	if err != nil {
 		slog.Error("failed to start server", slog.String("error", err.Error()))
 		os.Exit(1)
@@ -42,7 +43,10 @@ func startTestServer(httpDir, protoDir, stubDir string) (*httptest.Server, error
 		return nil, fmt.Errorf("failed to set env: %w", err)
 	}
 
-	handler, err := newHandler(httpDir, protoDir, stubDir)
+	handler, err := handler.New(httpDir, protoDir, stubDir)
+	if err != nil {
+		return nil, fmt.Errorf("create handler: %w", err)
+	}
 	server := httptest.NewServer(handler)
 	return server, err
 }
@@ -50,21 +54,53 @@ func startTestServer(httpDir, protoDir, stubDir string) (*httptest.Server, error
 func TestHTTPServer(t *testing.T) {
 	t.Parallel()
 
-	url, err := url.JoinPath(serverURL, "helloworld")
-	require.NoError(t, err)
+	t.Run("URL not found", func(t *testing.T) {
+		t.Parallel()
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	require.NoError(t, err)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer func() {
+		url, err := url.JoinPath(serverURL, "not-found")
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
 		require.NoError(t, resp.Body.Close())
-	}()
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
 
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.JSONEq(t, `{"message": "Hello from http stub"}`, string(body))
+	t.Run("Method not allowed", func(t *testing.T) {
+		t.Parallel()
+
+		url, err := url.JoinPath(serverURL, "helloworld")
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodPost, url, nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+	})
+
+	t.Run("Found", func(t *testing.T) {
+		t.Parallel()
+
+		url, err := url.JoinPath(serverURL, "helloworld")
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, resp.Body.Close())
+		}()
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.JSONEq(t, `{"message": "Hello from http stub"}`, string(body))
+	})
 }
 
 func TestGrpcServerSuccessResponses(t *testing.T) {
@@ -74,7 +110,7 @@ func TestGrpcServerSuccessResponses(t *testing.T) {
 	c, err := grpc.NewClient(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
-	t.Run("unary", func(t *testing.T) {
+	t.Run("Unary call", func(t *testing.T) {
 		t.Parallel()
 
 		client := helloworldpb.NewGreeterClient(c)
@@ -86,7 +122,7 @@ func TestGrpcServerSuccessResponses(t *testing.T) {
 		assert.Equal(t, "Hello from proto stub", reply.Message)
 	})
 
-	t.Run("server side streaming", func(t *testing.T) {
+	t.Run("Server side streaming", func(t *testing.T) {
 		t.Parallel()
 
 		client := routeguide.NewRouteGuideClient(c)
@@ -121,7 +157,7 @@ func TestGrpcServerSuccessResponses(t *testing.T) {
 		assert.Equal(t, int32(733555590), results[2].Location.Longitude)
 	})
 
-	t.Run("client side streaming", func(t *testing.T) {
+	t.Run("Client side streaming", func(t *testing.T) {
 		t.Parallel()
 
 		client := routeguide.NewRouteGuideClient(c)
