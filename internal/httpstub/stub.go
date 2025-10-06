@@ -26,7 +26,11 @@ type Response struct {
 
 func (s *Stub) validate() error {
 	if s.Path == "" {
-		return fmt.Errorf(`"path" field is required`)
+		return errors.New(`"path" field is required`)
+	}
+
+	if s.Response.Status == 0 {
+		return errors.New(`"status" field is required`)
 	}
 
 	return nil

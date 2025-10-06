@@ -21,12 +21,15 @@ The HTTP and gRPC server run on the same port.
 
 ## HTTP stub server
 
-The HTTP(s) stub requires only the `path` fields. By default the stub server returns the HTTP status code 200 (OK).
+The HTTP(s) stub requires only the `path` and `response.status` fields, otherwise the server returns a 404 (Not found) HTTP status code.
 
 ### Minimal example
 ```JSON
 {
-    "path": "/helloworld"
+    "path": "/helloworld",
+    "response": {
+        "status": "200"
+    }
 }
 ```
 
