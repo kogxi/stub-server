@@ -3,7 +3,9 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,6 +20,8 @@ var (
 	protoDir     = flag.String("proto", "", "Path to proto files")
 	protoStubDir = flag.String("stubs", "", "Path to gRPC stubs")
 	httpStubDir  = flag.String("http", "", "Path to HTTP stubs")
+	tlsCert      = flag.String("cert", "", "Path to TLS certificate")
+	tlsCertKey   = flag.String("key", "", "Path to TLS certificate key")
 )
 
 func main() {
@@ -33,7 +37,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := &http.Server{Addr: *address, Handler: handler}
+	tls, err := loadTLS(*tlsCert, *tlsCertKey)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to load TLS config", slog.String("error", err.Error()))
+	}
+
+	srv := &http.Server{
+		Addr:      *address,
+		Handler:   handler,
+		TLSConfig: tls,
+	}
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
@@ -51,4 +64,18 @@ func main() {
 	if err != nil {
 		slog.ErrorContext(ctx, "Server stopped", slog.String("error", err.Error()))
 	}
+}
+
+func loadTLS(certFile string, keyFile string) (*tls.Config, error) {
+	if certFile == "" || keyFile == "" {
+		return nil, nil
+	}
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load cert: %w", err)
+	}
+	cfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+
+	return cfg, nil
 }
