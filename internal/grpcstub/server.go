@@ -57,9 +57,7 @@ func registerServices(srv *grpc.Server, protoDir string, stubDir string, r Repos
 		return fmt.Errorf("load protos from %v: %w", protoDir, err)
 	}
 
-	if err := s.registerServices(); err != nil {
-		return fmt.Errorf("register services: %w", err)
-	}
+	s.registerServices()
 
 	if err := s.loadStubs(stubDir); err != nil {
 		return fmt.Errorf("load stubs from %v: %w", stubDir, err)

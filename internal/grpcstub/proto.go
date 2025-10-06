@@ -46,7 +46,7 @@ func (s *GRPCService) registerTypes(protoDir string) error {
 	return nil
 }
 
-func (s *GRPCService) registerServices() error {
+func (s *GRPCService) registerServices() {
 	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		for svcNum := 0; svcNum < fd.Services().Len(); svcNum++ {
 			svc := fd.Services().Get(svcNum)
@@ -70,8 +70,6 @@ func (s *GRPCService) registerServices() error {
 		}
 		return true
 	})
-
-	return nil
 }
 
 func (s *GRPCService) registerProto(protoDir string, protoFileName string) (err error) {
