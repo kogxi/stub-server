@@ -1,98 +1,88 @@
 package grpcstub
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
-	"google.golang.org/grpc/codes"
+	"github.com/bufbuild/protocompile/parser"
+	"github.com/bufbuild/protocompile/reporter"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/dynamicpb"
 )
 
-// Stream represents a stream of gRPC responses.
-type Stream struct {
-	Data  []json.RawMessage `json:"data"`
-	Error string            `json:"error"`
-	Code  *codes.Code       `json:"code,omitempty"`
-	Delay int               `json:"delay,omitempty"`
-}
-
-func (s *Stream) validate() error {
-	if s.Code == nil && len(s.Data) == 0 && s.Error == "" {
-		return fmt.Errorf(`stream can't be empty`)
-	}
-	return nil
-}
-
-// Output represents the output of a gRPC method, which can be a single response or a stream.
-type Output struct {
-	Data   json.RawMessage `json:"data"`
-	Error  string          `json:"error"`
-	Code   *codes.Code     `json:"code,omitempty"`
-	Stream *Stream         `json:"stream"`
-}
-
-func (o *Output) validate() error {
-	if o.Code == nil && o.Data == nil && o.Error == "" && o.Stream == nil {
-		return fmt.Errorf(`output can't be empty`)
-	}
-
-	if o.Stream != nil {
-		return o.Stream.validate()
-	}
-	return nil
-}
-
-// ProtoStub represents a gRPC stub definition.
-type ProtoStub struct {
-	Service string `json:"service"`
-	Method  string `json:"method"`
-	Matcher string `json:"matcher"`
-	Output  Output `json:"output"`
-}
-
-func (s *ProtoStub) validate() error {
-	if s.Service == "" {
-		return fmt.Errorf(`"service" field is required`)
-	}
-	if s.Method == "" {
-		return fmt.Errorf(`"method" field is required`)
-	}
-
-	return s.Output.validate()
-}
-
-func load(dir string) ([]ProtoStub, error) {
-	stubs := make([]ProtoStub, 0)
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+// registerTypes loads all .proto files from the specified directory and registers them
+// with the gRPC server.
+func (s *GRPCService) registerTypes(protoDir string) error {
+	err := filepath.WalkDir(protoDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() {
-			if filepath.Ext(path) != ".json" {
+			if filepath.Ext(path) != ".proto" {
 				return nil
 			}
-
-			stub, err := loadFile(path)
+			n, err := filepath.Rel(protoDir, path)
 			if err != nil {
-				return fmt.Errorf("load stub from file %v: %w", path, err)
+				return err
 			}
 
-			stubs = append(stubs, stub)
+			return s.registerProto(protoDir, n)
 		}
 		return nil
 	})
+
 	if err != nil {
-		return nil, fmt.Errorf(`read dir "%v": %w`, dir, err)
+		return fmt.Errorf("register services: %w", err)
 	}
-	return stubs, nil
+
+	return nil
 }
 
-func loadFile(path string) (s ProtoStub, err error) {
-	f, err := os.Open(path)
+func (s *GRPCService) registerServices() {
+	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		for svcNum := 0; svcNum < fd.Services().Len(); svcNum++ {
+			svc := fd.Services().Get(svcNum)
+			serviceName := string(svc.FullName())
+			s.sdMap[serviceName] = svc
+			gsd := grpc.ServiceDesc{ServiceName: serviceName, HandlerType: (*interface{})(nil)}
+			for methodNum := 0; methodNum < svc.Methods().Len(); methodNum++ {
+				m := svc.Methods().Get(methodNum)
+				slog.Info("registering gRPC method", slog.String("service", serviceName), slog.String("method", string(m.Name())), slog.Bool("client_stream", m.IsStreamingClient()), slog.Bool("server_stream", m.IsStreamingServer()))
+				if m.IsStreamingServer() {
+					gsd.Streams = append(gsd.Streams, grpc.StreamDesc{StreamName: string(m.Name()), Handler: s.ServerStreamHandler, ServerStreams: m.IsStreamingServer(), ClientStreams: m.IsStreamingClient()})
+					continue
+				}
+				if m.IsStreamingClient() {
+					gsd.Streams = append(gsd.Streams, grpc.StreamDesc{StreamName: string(m.Name()), Handler: s.ClientStreamHandler, ServerStreams: m.IsStreamingServer(), ClientStreams: m.IsStreamingClient()})
+					continue
+				}
+				gsd.Methods = append(gsd.Methods, grpc.MethodDesc{MethodName: string(m.Name()), Handler: s.Handler})
+			}
+			s.grpcServer.RegisterService(&gsd, s)
+		}
+		return true
+	})
+}
+
+func (s *GRPCService) registerProto(protoDir string, protoFileName string) (err error) {
+	protoFileName = strings.ReplaceAll(protoFileName, "\\", "/")
+
+	// Skip the file if it is already registered
+	if _, err := protoregistry.GlobalFiles.FindFileByPath(protoFileName); err == nil {
+		return nil
+	}
+
+	f, err := os.Open(path.Join(protoDir, protoFileName))
 	if err != nil {
-		return ProtoStub{}, fmt.Errorf("open file: %v: %w", path, err)
+		return fmt.Errorf("open file: %w", err)
 	}
 	defer func() {
 		closeErr := f.Close()
@@ -101,13 +91,48 @@ func loadFile(path string) (s ProtoStub, err error) {
 		}
 	}()
 
-	var stub ProtoStub
-	if err := json.NewDecoder(f).Decode(&stub); err != nil {
-		return ProtoStub{}, fmt.Errorf("unmarshal stub %v: %w", path, err)
+	handler := reporter.NewHandler(nil)
+	node, err := parser.Parse(protoFileName, f, handler)
+	if err != nil {
+		return fmt.Errorf("parse proto: %w", err)
 	}
 
-	if err := stub.validate(); err != nil {
-		return ProtoStub{}, fmt.Errorf("stub validation %v: %w", path, err)
+	res, err := parser.ResultFromAST(node, true, handler)
+	if err != nil {
+		return fmt.Errorf("convert from AST: %w", err)
 	}
-	return stub, nil
+
+	// recursively register dependencies
+	for _, d := range res.FileDescriptorProto().Dependency {
+		err = s.registerProto(protoDir, d)
+		if err != nil {
+			return err
+		}
+	}
+
+	fd, err := protodesc.NewFile(res.FileDescriptorProto(), protoregistry.GlobalFiles)
+	if err != nil {
+		return fmt.Errorf("convert to FileDescriptor: %w", err)
+	}
+
+	if _, err = protoregistry.GlobalTypes.FindMessageByName(fd.FullName()); errors.Is(err, protoregistry.NotFound) {
+		if err := protoregistry.GlobalFiles.RegisterFile(fd); err != nil {
+			return fmt.Errorf("register file: %w", err)
+		}
+	}
+
+	for i := 0; i < fd.Messages().Len(); i++ {
+		msg := fd.Messages().Get(i)
+		if err := protoregistry.GlobalTypes.RegisterMessage(dynamicpb.NewMessageType(msg)); err != nil {
+			return fmt.Errorf("register message %q: %w", msg.FullName(), err)
+		}
+	}
+	for i := 0; i < fd.Extensions().Len(); i++ {
+		ext := fd.Extensions().Get(i)
+		if err := protoregistry.GlobalTypes.RegisterExtension(dynamicpb.NewExtensionType(ext)); err != nil {
+			return fmt.Errorf("register extension %q: %w", ext.FullName(), err)
+		}
+	}
+
+	return nil
 }

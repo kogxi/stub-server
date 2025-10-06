@@ -38,11 +38,6 @@ func TestMain(m *testing.M) {
 }
 
 func startTestServer(httpDir, protoDir, stubDir string) (*httptest.Server, error) {
-	err := os.Setenv("GOLANG_PROTOBUF_REGISTRATION_CONFLICT", "ignore")
-	if err != nil {
-		return nil, fmt.Errorf("failed to set env: %w", err)
-	}
-
 	handler, err := handler.New(httpDir, protoDir, stubDir)
 	if err != nil {
 		return nil, fmt.Errorf("create handler: %w", err)
